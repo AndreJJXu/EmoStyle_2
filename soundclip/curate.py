@@ -23,6 +23,7 @@ def func(idx):
             audio_inputs = np.array([audio_inputs])
             np.save(path, audio_inputs)
         os.remove(wav_name)
+        # print()
     except:
         print(wav_name)
     finally:

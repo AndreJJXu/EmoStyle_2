@@ -33,23 +33,34 @@ parser.add_argument('--num_workers', default=8, type=int,
 
 args = parser.parse_args()
 
+def copyStateDict(state_dict):
+    if list(state_dict.keys())[0].startswith("module"):
+        start_idx = 1
+    else:
+        start_idx = 0
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        name = ".".join(k.split(".")[start_idx:])
+        new_state_dict[name] = v
+    return new_state_dict
 
 
 if __name__ == "__main__":
     random.seed(42)
 
     vggsound_dataset = VggsoundCurationDataset()
-    audioset_balanced_dataset = AudiosetBalancedCurationDataset()
-    audioset_unbalanced_dataset = AudiosetUnbalancedCurationDataset()
+    # audioset_balanced_dataset = AudiosetBalancedCurationDataset()
+    # audioset_unbalanced_dataset = AudiosetUnbalancedCurationDataset()
 
-    dataset = torch.utils.data.ConcatDataset([vggsound_dataset, audioset_balanced_dataset, audioset_unbalanced_dataset])
+    # dataset = torch.utils.data.ConcatDataset([vggsound_dataset, audioset_balanced_dataset, audioset_unbalanced_dataset])
+    dataset = torch.utils.data.ConcatDataset([vggsound_dataset])
 
     lengths = len(dataset)
 
     train_dataset, validation_dataset = torch.utils.data.random_split(dataset, [int(0.8 * lengths), int(0.2 * lengths)])
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    clip_model, _ = clip.load("ViT-B/32", device=device)
+    clip_model, _ = clip.load("/mnt/ssd/BeautifulXJJ/AIGC/ICME24/Shifted_Diffusion-main/path_to_CLIP/ViT-B-32.pt", device=device)
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
@@ -69,6 +80,7 @@ if __name__ == "__main__":
 
     audioencoder = AudioEncoder()
     audioencoder = audioencoder.cuda()
+    audioencoder.load_state_dict(copyStateDict(torch.load("/mnt/ssd/BeautifulXJJ/AIGC/Sound-Image-Generation/sound-guided-semantic-image-manipulation/pretrained_models/resnet18.pth")))
 
     optimizer = optim.SGD(audioencoder.parameters(), lr=args.lr,
                momentum=args.momentum, weight_decay=args.weight_decay)

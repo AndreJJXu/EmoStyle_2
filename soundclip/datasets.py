@@ -16,8 +16,8 @@ import pickle
 from PIL import Image
 import os
 
-nltk.download("stopwords")
-nltk.download("wordnet")
+# nltk.download("stopwords")
+# nltk.download("wordnet")
 
 class VggsoundCurationDataset(Dataset):
     def __init__(self):
@@ -57,6 +57,7 @@ class VggsoundCurationDataset(Dataset):
         text_prompt = self.text_aug.synonym_replacement(text_prompt)
         text_prompt = self.text_aug.random_swap(text_prompt)
         text_prompt = self.text_aug.random_insertion(text_prompt)
+        print("HHHHAAAA")
             
         return audio_inputs, audio_aug, text_prompt
 

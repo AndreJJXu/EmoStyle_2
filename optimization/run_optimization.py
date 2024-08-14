@@ -13,8 +13,10 @@ import numpy as np
 import random
 import torch.nn.functional as F
 
+from PIL import Image
 import cv2
 
+# import clip
 sys.path.append("./")
 from criteria.soundclip_loss import SoundCLIPLoss
 from criteria.id_loss import IDLoss
@@ -30,17 +32,24 @@ def get_lr(t, initial_lr, rampdown=0.25, rampup=0.05):
 
     return initial_lr * lr_ramp
 
+def tensor2im(var):
+	# var shape: (3, H, W)
+	var = var.cpu().detach().transpose(0, 2).transpose(0, 1).numpy()
+	var = ((var + 1) / 2)
+	var[var < 0] = 0
+	var[var > 1] = 1
+	var = var * 255
+	return Image.fromarray(var.astype('uint8'))
+
 
 def main(args):
     
     ensure_checkpoint_exists(args.ckpt)
-
     y, sr = librosa.load(args.audio_path, sr=44100)
     n_mels = 128
     time_length = 864
     audio_inputs = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=n_mels)
     audio_inputs = librosa.power_to_db(audio_inputs, ref=np.max) / 80.0 + 1
-
     audio_inputs = audio_inputs
 
     zero = np.zeros((n_mels, time_length))
@@ -53,8 +62,12 @@ def main(args):
     else:
         zero[:,:w] = audio_inputs[:,:w]
         audio_inputs = zero
-
-    
+    # flag = 0
+    # if args.description == None :
+    #     flag = 0
+    # else:
+    #     text_inputs = torch.cat([clip.tokenize(args.description)]).cuda()
+    #     flag = 1
     audio_inputs = cv2.resize(audio_inputs, (n_mels, resize_resolution))
     audio_inputs = np.array([audio_inputs])
     audio_inputs = torch.from_numpy(audio_inputs.reshape((1, 1, n_mels, resize_resolution))).float().cuda()
@@ -70,14 +83,27 @@ def main(args):
 
     if args.latent_path:
         latent_code_init = torch.load(args.latent_path).cuda()
+        print(latent_code_init)
         with torch.no_grad():
             img_orig, _ = g_ema([latent_code_init], input_is_latent=True, randomize_noise=False)
+            # print("img_orig's shape: ", img_orig.shape)
+            # print(img_orig)
+            img_0 = tensor2im(img_orig[0])
+            res = np.array(img_0)
+            res_ = Image.fromarray(res)
+            res_.save("damnresults.jpg")
+
+
+
+        
 
     elif args.mode == "edit":
         latent_code_init_not_trunc = torch.randn(1, 512).cuda()
+        print("edit: ", latent_code_init_not_trunc.size())
         with torch.no_grad():
             img_orig, latent_code_init = g_ema([latent_code_init_not_trunc], return_latents=True,
                                         truncation=args.truncation, truncation_latent=mean_latent)
+            print("img_orig's dim is: ", img_orig.shape)
 
     else:
         latent_code_init = mean_latent.detach().clone().repeat(1, 18, 1)
@@ -96,8 +122,11 @@ def main(args):
         optimizer.param_groups[0]["lr"] = lr
         
         img_gen, _ = g_ema([latent], input_is_latent=True, randomize_noise=False)
-        cosine_distance_loss = soundclip_loss(img_gen, audio_inputs)
-
+        # if args.description:
+        #     cosine_distance_loss = soundclip_loss(img_gen, audio_inputs, args.description)
+        # else:
+        #     cosine_distance_loss = soundclip_loss(img_gen, audio_inputs)
+        cosine_distance_loss = soundclip_loss(img_gen, audio_inputs, args.description)
         if args.mode == "edit":
             if not args.adaptive_layer_masking:
                 similarity_loss = ((latent_code_init - latent) ** 2).sum()
@@ -125,7 +154,7 @@ def main(args):
         if args.save_intermediate_image_every > 0 and i % args.save_intermediate_image_every == 0:
             with torch.no_grad():
                 img_gen, _ = g_ema([latent], input_is_latent=True, randomize_noise=False)
-            torchvision.utils.save_image(img_gen, f"results/{str(i).zfill(5)}.png", normalize=True, range=(-1, 1))
+            torchvision.utils.save_image(img_gen, f"results/{str(i).zfill(5)}.jpg", normalize=True, range=(-1, 1))
     
     if args.mode == "edit":
         with torch.no_grad():
@@ -142,7 +171,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--description", type=str, default="sobbing person", help="the text that guides the editing/generation")
+    parser.add_argument("--description", type=str, default=None, help="the text that guides the editing/generation")
     parser.add_argument("--audio_path", type=str, default="./audiosample/explosion.wav")
     parser.add_argument("--ckpt", type=str, default="./pretrained_models/stylegan2-ffhq-config-f.pt", help="pretrained StyleGAN2 weights")
     parser.add_argument("--stylegan_size", type=int, default=1024, help="StyleGAN resolution")
